@@ -165,9 +165,8 @@ function bank(){if(!combo.n)return;const m=Math.min(combo.n,5);score+=Math.round
 function panel(html){$('panel').innerHTML=html;$('panel').style.display='flex';$('go').onclick=restart;const r=$('resume');if(r)r.onclick=resume;}
 function pauseGame(){if(!running)return;running=false;paused=true;pauseAt=performance.now();I.down=false;joy.style.display='none';$('pause').style.display='none';
  panel(`<h1>PAUZA</h1><p style="text-align:center">${score} PKT · UPADKI ${bails}</p><button id="resume">WZNÓW</button><button id="go" style="background:none;color:#111;border:2px solid #111">OD NOWA</button>`);}
-$('pause').onclick=pauseGame;
 function resume(){t0+=performance.now()-pauseAt;paused=false;running=true;$('panel').style.display='none';$('pause').style.display='block';}
-panel(`<h1>SKATE</h1><div style="font-size:12px;letter-spacing:.3em;margin-bottom:6px">RIDER: TONI</div><p>Trzymaj palec i przesuwaj (joystick od miejsca dotyku):<br>← → skręt · ↑ odpychanie · ↓ hamowanie + przysiad (wyższy skok)<br><b>Puść palec = ollie.</b><br>W powietrzu <b>dotknij nad poręczą/murkiem = grind</b>, balansuj ← →, puść = zeskok.<br>W powietrzu trzymanie palca + ← → obraca deskę (ląduj prosto!).<br>Szybki swipe w powietrzu: ↑ kickflip, ← → shove-it.<br>Uderzenie w przeszkodę bez skoku = upadek.</p><button id="go">START</button>`);
+panel(`<h1>SKATE</h1><div style="font-size:12px;letter-spacing:.3em;margin-bottom:6px">RIDER: TONI</div><p>Trzymaj palec i przesuwaj: ← → skręt (puść ruch = Toni wraca na prosto) · ↑ odpychanie · ↓ hamowanie + przysiad.<br><b>Puść palec = ollie.</b> Ollie przed poręczą/murkiem = automatyczny grind.<br>Na poręczy: dotknij i puść bez ruchu = hop dalej po poręczy · dotknij, przesuń w bok i puść = zeskok w bok. Koniec poręczy = automatyczny zeskok.<br>Szybki swipe w powietrzu: ↑ kickflip, ← → shove-it.<br>Uderzenie w przeszkodę bez skoku = upadek.</p><button id="go">START</button>`);
 
 // ---------- INPUT ----------
 const I={down:false,ox:0,oy:0,x:0,y:0,t:0},JR=55;
@@ -180,28 +179,37 @@ addEventListener('pointermove',e=>{if(!I.down)return;I.x=e.clientX;I.y=e.clientY
 function up(){if(!I.down)return;I.down=false;joy.style.display='none';if(!running)return;
  const dx=I.x-I.ox,dy=I.y-I.oy,dist=Math.hypot(dx,dy),dur=performance.now()-I.t;
  if(P.st==='ground')ollie();
- else if(P.st==='grind')popOff();
+ else if(P.st==='grind'){if(Math.abs(dx)<28)hop();else jumpOff(Math.sign(dx));}
  else if(P.st==='air'){P.catch=false;if(dur<260&&dist>26&&!P.trick){
    P.trick=(Math.abs(dy)>Math.abs(dx)&&dy<0)?{n:'KICKFLIP',p:250,t:0,d:.42,k:'flip'}:{n:'SHOVE-IT',p:150,t:0,d:.38,k:'shove'};}}}
 addEventListener('pointerup',up);addEventListener('pointercancel',up);
 const stick=()=>I.down?[dz(clamp((I.x-I.ox)/JR,-1,1)),dz(clamp((I.oy-I.y)/JR,-1,1))]:[0,0];
 
 // ---------- MECHANICS ----------
-function ollie(){P.vy=5.3+P.crouch*3.3+P.spd*.07;P.st='air';P.airT=0;P.tApex=P.vy/G;P.catch=false;P.crouch=0;}
-function popOff(){const o=P.grind,left=P.z-o.zB;combo.pts+=Math.round(P.gPts);
- if(left<3)addCombo('CZYSTY ZESKOK',100);
- P.st='air';P.vy=5.2;P.airT=0;P.tApex=P.vy/G;P.grind=null;P.auto=true;P.catch=false;}
+function findRail(){for(const o of OBS){if(o.t!=='rail'&&o.t!=='ledge')continue;
+ const hw=o.t==='rail'?1.8:o.w/2+1.4;if(P.z<o.zA+7&&P.z>o.zB+2&&Math.abs(P.x-o.x)<hw)return o;}return null;}
+function ollie(){P.vy=5.3+P.crouch*3.3+P.spd*.07;P.target=findRail();P.noLock=null;P.entryA=P.a;
+ if(P.target)P.vy=Math.max(P.vy,Math.sqrt(2*G*(P.target.h+.4)));
+ P.st='air';P.airT=0;P.tApex=P.vy/G;P.catch=false;P.crouch=0;}
+function hop(){const o=P.grind;combo.pts+=Math.round(P.gPts);P.gPts=0;P.st='air';P.vy=5.6;P.airT=0;P.tApex=P.vy/G;P.target=o;P.grind=null;P.hopped=true;P.catch=false;}
+function jumpOff(sd){const o=P.grind;combo.pts+=Math.round(P.gPts);P.gPts=0;P.st='air';P.vy=5.2;P.airT=0;P.tApex=P.vy/G;
+ P.a=sd*.75;P.target=null;P.noLock=o;P.grind=null;P.auto=true;P.catch=false;addCombo('ZESKOK',80);}
+function popOff(){combo.pts+=Math.round(P.gPts);P.gPts=0;addCombo('CZYSTY ZESKOK',100);
+ P.st='air';P.vy=4.6;P.target=null;P.noLock=P.grind;P.airT=0;P.tApex=P.vy/G;P.grind=null;P.auto=true;P.catch=false;}
 function bail(why){if(P.st==='bail')return;bailClip=(P.st==='grind'||P.y>.3)?'fallBal':'fall';bailTime=0;landT=0;P.st='bail';P.bailT=1.3;bails++;combo={n:0,pts:0};pop(why);shake=.45;
  P.bvx=Math.sin(P.a)*P.spd*.55;P.bvz=-Math.cos(P.a)*P.spd*.55;P.grind=null;P.trick=null;}
 function respawn(){let best=CP[0];for(const c of CP)if(c[0]>P.z+.5&&(best[0]<=P.z+.5||c[0]<best[0]))best=c;resetPlayer(best[1],best[0]);}
-function tryLock(){if(!I.down)return;for(const o of OBS){if(o.t!=='rail'&&o.t!=='ledge')continue;
- const hw=o.t==='rail'?.55:o.w/2+.25;
- if(Math.abs(P.x-o.x)<hw&&P.z<=o.zA&&P.z>=o.zB+1&&P.y>=o.h-.2){
-  const ang=P.a+P.yaw,slide=Math.abs(Math.sin(ang))>.42;
-  P.st='grind';P.grind=o;P.y=o.h;P.vy=0;P.a=0;P.yaw=slide?Math.PI/2*Math.sign(Math.sin(ang)):0;
-  P.bal=clamp((P.x-o.x)*.9,-.5,.5);P.drift=0;P.gT=0;P.gPts=0;P.x=o.x;P.trick=null;P.auto=false;
-  addCombo(o.t==='ledge'?(slide?'BOARDSLIDE':'5-0 LEDGE'):(slide?'BOARDSLIDE':'50-50 GRIND'),100);return;}}}
-function land(){P.y=0;P.vy=0;
+function tryLock(dt){const o=P.target;if(!o)return;
+ P.x+=(o.x-P.x)*Math.min(1,dt*7);P.spd=Math.max(P.spd,4);
+ if(P.z>o.zA&&P.y<o.h+.1&&P.vy<0){P.y=o.h+.1;P.vy=0;}P.a+=(0-P.a)*Math.min(1,dt*7);
+ if(P.z<=o.zA&&P.z>=o.zB+.5&&P.y<=o.h+.05&&(P.vy<=0||P.y<o.h)){
+  const slide=!P.hopped&&Math.abs(P.entryA||0)>.35&&o.t!=='ledge',sd=Math.sign(P.entryA||1);
+  P.st='grind';P.grind=o;P.y=o.h;P.vy=0;P.a=0;P.x=o.x;P.yaw=slide?Math.PI/2*sd:0;
+  P.bal=0;P.drift=0;P.gT=0;P.gPts=0;P.trick=null;P.auto=false;P.target=null;
+  if(P.hopped){P.hopped=false;addCombo('HOP',60);}
+  else addCombo(o.t==='ledge'?'5-0 LEDGE':(slide?'BOARDSLIDE':'50-50 GRIND'),100);}
+ else if(P.z<o.zB)P.target=null;}
+function land(){P.y=0;P.vy=0;P.noLock=null;P.target=null;
  if(P.trick)return bail('NIEDOKOŃCZONY TRIK');
  for(const o of OBS)if(o.t==='stairs'&&P.z<=o.zA&&P.z>=o.zB)return bail('ZA KRÓTKO');
  const k=Math.round(P.yaw/Math.PI),e=P.yaw-k*Math.PI,bad=P.catch?.75:.6,wob=P.catch?.35:.26;
@@ -216,7 +224,9 @@ function step(dt){
   if(!MDL)tiltG.rotation.z+=(1.45-tiltG.rotation.z)*dt*8;deck.position.x-=dt*2.2;deck.rotation.y+=dt*6;
   if(P.bailT<=0)respawn();return;}
  if(P.st==='ground'){
-  P.a=clamp(P.a+st*2.1*dt*(.45+Math.min(P.spd,10)/10*.55),-1.1,1.1);
+  if(I.down)I.ox+=(I.x-I.ox)*Math.min(1,dt*3.5);
+  P.a=clamp(P.a+st*2.6*dt*(.45+Math.min(P.spd,10)/10*.55),-1.1,1.1);
+  if(!st)P.a+=(0-P.a)*Math.min(1,dt*3.2);
   if(fw>0){P.spd+=fw*7*dt;P.push+=dt*9;}else P.push=0;
   if(fw<0){P.spd-=-fw*5*dt;P.crouch=Math.min(1,P.crouch-fw*2.4*dt);}else P.crouch=Math.max(0,P.crouch-3*dt);
   P.spd=clamp(P.spd-.35*dt,0,14);P.gT+=dt;if(P.gT>.9)bank();}
@@ -225,21 +235,20 @@ function step(dt){
   if(I.down&&P.catch)P.yaw+=st*3.4*dt;
   if(P.auto){const tg=Math.round(P.yaw/Math.PI)*Math.PI;P.yaw+=(tg-P.yaw)*Math.min(1,dt*14);}
   if(P.trick){P.trick.t+=dt;if(P.trick.t>=P.trick.d){addCombo(P.trick.n,P.trick.p);P.trick=null;}}
-  tryLock();
+  tryLock(dt);
   if(P.st==='air'&&P.y<=0&&P.vy<0)land();}
  if(P.st==='grind'){const o=P.grind;P.gT+=dt;P.gPts+=80*dt;P.spd=Math.max(0,P.spd-.6*dt);
   P.drift=clamp(P.drift+rnd(-1,1)*5*dt,-.8,.8);
-  const inst=(o.t==='rail'?1.5:1)+(Math.abs(Math.sin(P.yaw))>.5?.35:0);
-  P.bal+=(P.drift+P.bal*inst-st*2.4)*dt;
-  if(Math.abs(P.bal)>1)return bail('UTRATA RÓWNOWAGI');
+  P.bal+=(P.drift*.6-P.bal*1.5)*dt;
   P.z-=Math.max(P.spd,3)*dt;
-  if(P.z<o.zB){P.st='air';P.vy=0;P.sloppy=true;P.grind=null;P.auto=true;P.airT=0;P.tApex=0;}
+  if(P.z<o.zB){popOff();P.airT=0;P.tApex=P.vy/G;P.grind=null;P.auto=true;}
   return;}
  // move
  P.x+=Math.sin(P.a)*P.spd*dt;P.z-=Math.cos(P.a)*P.spd*dt;
  if(Math.abs(P.x)>5.1){P.x=Math.sign(P.x)*5.1;P.a*=-.3;P.spd*=.9;}
  // collisions
  for(const o of OBS){
+  if(o===P.noLock||o===P.target)continue;
   if(o.t==='rail'||o.t==='ledge'||o.t==='curb'||o.t==='cone'){
    if(Math.abs(P.x-o.x)<o.w/2+.25&&P.z<o.zA+.3&&P.z>o.zB-.3&&P.y<o.h-.05)return bail('UDERZENIE');}
   if(o.t==='stairs'&&P.st==='ground'&&P.z<o.zA&&P.z>o.zB)return bail('SCHODY');
@@ -255,6 +264,7 @@ function finish(){running=false;$('pause').style.display='none';const t=((perfor
  const s=1+(bails===0)+(score>=2500);
  panel(`<h1>META</h1><div class="st">${'★'.repeat(s)}${'☆'.repeat(3-s)}</div><p style="text-align:center">${score} PKT · UPADKI ${bails} · ${t} s<br>★ ukończ · ★ bez upadku · ★ 2500 pkt</p><button id="go">JESZCZE RAZ</button>`);}
 
+window.__G={P,OBS,ollie:()=>ollie(),up:(dx)=>{I.down=true;I.ox=0;I.oy=0;I.x=dx;I.y=0;I.t=performance.now()-500;up();}};
 // ---------- ANIM ----------
 let cx=0,cz=-5,tm=0;
 function animate(dt){tm+=dt;
